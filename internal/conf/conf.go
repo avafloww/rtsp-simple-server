@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/aler9/gortsplib"
+	"github.com/aler9/gortsplib/pkg/base"
 	"github.com/aler9/gortsplib/pkg/headers"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/yaml.v2"
@@ -64,20 +64,20 @@ type Conf struct {
 	RunOnConnectRestart   bool                            `yaml:"runOnConnectRestart"`
 
 	// rtsp
-	RTSPDisable       bool                                  `yaml:"rtspDisable"`
-	Protocols         []string                              `yaml:"protocols"`
-	ProtocolsParsed   map[gortsplib.StreamProtocol]struct{} `yaml:"-" json:"-"`
-	Encryption        string                                `yaml:"encryption"`
-	EncryptionParsed  Encryption                            `yaml:"-" json:"-"`
-	RTSPAddress       string                                `yaml:"rtspAddress"`
-	RTSPSAddress      string                                `yaml:"rtspsAddress"`
-	RTPAddress        string                                `yaml:"rtpAddress"`
-	RTCPAddress       string                                `yaml:"rtcpAddress"`
-	ServerKey         string                                `yaml:"serverKey"`
-	ServerCert        string                                `yaml:"serverCert"`
-	AuthMethods       []string                              `yaml:"authMethods"`
-	AuthMethodsParsed []headers.AuthMethod                  `yaml:"-" json:"-"`
-	ReadBufferSize    int                                   `yaml:"readBufferSize"`
+	RTSPDisable       bool                             `yaml:"rtspDisable"`
+	Protocols         []string                         `yaml:"protocols"`
+	ProtocolsParsed   map[base.StreamProtocol]struct{} `yaml:"-" json:"-"`
+	Encryption        string                           `yaml:"encryption"`
+	EncryptionParsed  Encryption                       `yaml:"-" json:"-"`
+	RTSPAddress       string                           `yaml:"rtspAddress"`
+	RTSPSAddress      string                           `yaml:"rtspsAddress"`
+	RTPAddress        string                           `yaml:"rtpAddress"`
+	RTCPAddress       string                           `yaml:"rtcpAddress"`
+	ServerKey         string                           `yaml:"serverKey"`
+	ServerCert        string                           `yaml:"serverCert"`
+	AuthMethods       []string                         `yaml:"authMethods"`
+	AuthMethodsParsed []headers.AuthMethod             `yaml:"-" json:"-"`
+	ReadBufferSize    int                              `yaml:"readBufferSize"`
 
 	// rtmp
 	RTMPDisable bool   `yaml:"rtmpDisable"`
@@ -155,14 +155,14 @@ func (conf *Conf) fillAndCheck() error {
 	if len(conf.Protocols) == 0 {
 		conf.Protocols = []string{"udp", "tcp"}
 	}
-	conf.ProtocolsParsed = make(map[gortsplib.StreamProtocol]struct{})
+	conf.ProtocolsParsed = make(map[base.StreamProtocol]struct{})
 	for _, proto := range conf.Protocols {
 		switch proto {
 		case "udp":
-			conf.ProtocolsParsed[gortsplib.StreamProtocolUDP] = struct{}{}
+			conf.ProtocolsParsed[base.StreamProtocolUDP] = struct{}{}
 
 		case "tcp":
-			conf.ProtocolsParsed[gortsplib.StreamProtocolTCP] = struct{}{}
+			conf.ProtocolsParsed[base.StreamProtocolTCP] = struct{}{}
 
 		default:
 			return fmt.Errorf("unsupported protocol: %s", proto)
@@ -185,7 +185,7 @@ func (conf *Conf) fillAndCheck() error {
 	case "strict", "yes", "true":
 		conf.EncryptionParsed = EncryptionStrict
 
-		if _, ok := conf.ProtocolsParsed[gortsplib.StreamProtocolUDP]; ok {
+		if _, ok := conf.ProtocolsParsed[base.StreamProtocolUDP]; ok {
 			return fmt.Errorf("encryption can't be used with the UDP stream protocol")
 		}
 

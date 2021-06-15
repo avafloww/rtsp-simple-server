@@ -63,7 +63,7 @@ type ReadPublisher interface {
 
 // DescribeRes is a describe response.
 type DescribeRes struct {
-	SDP      []byte
+	Stream   *gortsplib.ServerStream
 	Redirect string
 	Err      error
 }
@@ -80,7 +80,7 @@ type DescribeReq struct {
 // SetupPlayRes is a setup/play response.
 type SetupPlayRes struct {
 	Path       Path
-	Tracks     gortsplib.Tracks
+	Stream     *gortsplib.ServerStream
 	TrackInfos []streamproc.TrackInfo
 	Err        error
 }

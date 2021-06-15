@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"sync/atomic"
 
-	"github.com/aler9/gortsplib"
+	"github.com/aler9/gortsplib/pkg/base"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/aler9/rtsp-simple-server/internal/conf"
@@ -215,7 +215,7 @@ func (p *program) createResources(initial bool) error {
 		(p.conf.EncryptionParsed == conf.EncryptionNo ||
 			p.conf.EncryptionParsed == conf.EncryptionOptional) {
 		if p.serverRTSPPlain == nil {
-			_, useUDP := p.conf.ProtocolsParsed[gortsplib.StreamProtocolUDP]
+			_, useUDP := p.conf.ProtocolsParsed[base.StreamProtocolUDP]
 			p.serverRTSPPlain, err = rtspserver.New(
 				p.ctx,
 				p.conf.RTSPAddress,

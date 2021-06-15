@@ -33,7 +33,7 @@ type Parent interface {
 // Source is a RTSP external source.
 type Source struct {
 	ur              string
-	proto           *gortsplib.StreamProtocol
+	proto           *base.StreamProtocol
 	anyPortEnable   bool
 	fingerprint     string
 	readTimeout     time.Duration
@@ -52,7 +52,7 @@ type Source struct {
 func New(
 	ctxParent context.Context,
 	ur string,
-	proto *gortsplib.StreamProtocol,
+	proto *base.StreamProtocol,
 	anyPortEnable bool,
 	fingerprint string,
 	readTimeout time.Duration,

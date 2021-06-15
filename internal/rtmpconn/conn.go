@@ -238,7 +238,7 @@ func (c *Conn) runRead(ctx context.Context) error {
 	var audioClockRate int
 	var aacDecoder *rtpaac.Decoder
 
-	for i, t := range res.Tracks {
+	for i, t := range res.Stream.Tracks() {
 		if t.IsH264() {
 			if videoTrack != nil {
 				return fmt.Errorf("can't read track %d with RTMP: too many tracks", i+1)

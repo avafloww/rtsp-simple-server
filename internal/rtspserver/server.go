@@ -274,7 +274,7 @@ func (s *Server) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCtx) {
 }
 
 // OnDescribe implements gortsplib.ServerHandlerOnDescribe.
-func (s *Server) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, []byte, error) {
+func (s *Server) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*base.Response, *gortsplib.ServerStream, error) {
 	s.mutex.RLock()
 	c := s.conns[ctx.Conn]
 	s.mutex.RUnlock()
@@ -291,7 +291,7 @@ func (s *Server) OnAnnounce(ctx *gortsplib.ServerHandlerOnAnnounceCtx) (*base.Re
 }
 
 // OnSetup implements gortsplib.ServerHandlerOnSetup.
-func (s *Server) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *uint32, error) {
+func (s *Server) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, *uint32, error) {
 	s.mutex.RLock()
 	c := s.conns[ctx.Conn]
 	se := s.sessions[ctx.Session]

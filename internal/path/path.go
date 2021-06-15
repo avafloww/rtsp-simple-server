@@ -35,6 +35,10 @@ type Parent interface {
 	OnPathClose(*Path)
 }
 
+type rtspSession interface {
+	IsRTSPSession()
+}
+
 type sourceRedirect struct{}
 
 func (*sourceRedirect) IsSource() {}
@@ -77,9 +81,9 @@ type Path struct {
 	describeRequests             []readpublisher.DescribeReq
 	setupPlayRequests            []readpublisher.SetupPlayReq
 	source                       source.Source
-	sourceTracks                 gortsplib.Tracks
+	sourceStream                 *gortsplib.ServerStream
 	sp                           *streamproc.StreamProc
-	readers                      *readersMap
+	nonRTSPReaders               *readersMap
 	onDemandCmd                  *externalcmd.Cmd
 	describeTimer                *time.Timer
 	sourceCloseTimer             *time.Timer
@@ -134,7 +138,7 @@ func New(
 		ctx:                   ctx,
 		ctxCancel:             ctxCancel,
 		readPublishers:        make(map[readpublisher.ReadPublisher]readPublisherState),
-		readers:               newReadersMap(),
+		nonRTSPReaders:        newReadersMap(),
 		describeTimer:         newEmptyTimer(),
 		sourceCloseTimer:      newEmptyTimer(),
 		runOnDemandCloseTimer: newEmptyTimer(),
@@ -224,7 +228,7 @@ outer:
 			break outer
 
 		case req := <-pa.extSourceSetReady:
-			pa.sourceTracks = req.Tracks
+			pa.sourceStream = gortsplib.NewServerStream(req.Tracks)
 			pa.sp = streamproc.New(pa, len(req.Tracks))
 			pa.onSourceSetReady()
 			req.Res <- source.ExtSetReadyRes{SP: pa.sp}
@@ -299,17 +303,20 @@ outer:
 		req.Res <- readpublisher.SetupPlayRes{Err: fmt.Errorf("terminated")}
 	}
 
-	for c, state := range pa.readPublishers {
+	for rp, state := range pa.readPublishers {
 		if state != readPublisherStatePreRemove {
 			switch state {
 			case readPublisherStatePlay:
 				atomic.AddInt64(pa.stats.CountReaders, -1)
-				pa.readers.remove(c)
+
+				if _, ok := rp.(rtspSession); !ok {
+					pa.nonRTSPReaders.remove(rp)
+				}
 
 			case readPublisherStateRecord:
 				atomic.AddInt64(pa.stats.CountPublishers, -1)
 			}
-			c.Close()
+			rp.Close()
 		}
 	}
 
@@ -372,28 +379,33 @@ func (pa *Path) addReadPublisher(c readpublisher.ReadPublisher, state readPublis
 	pa.readPublishers[c] = state
 }
 
-func (pa *Path) removeReadPublisher(c readpublisher.ReadPublisher) {
-	state := pa.readPublishers[c]
-	pa.readPublishers[c] = readPublisherStatePreRemove
+func (pa *Path) removeReadPublisher(rp readpublisher.ReadPublisher) {
+	state := pa.readPublishers[rp]
+	pa.readPublishers[rp] = readPublisherStatePreRemove
 
 	switch state {
 	case readPublisherStatePlay:
 		atomic.AddInt64(pa.stats.CountReaders, -1)
-		pa.readers.remove(c)
+
+		if _, ok := rp.(rtspSession); !ok {
+			pa.nonRTSPReaders.remove(rp)
+		}
 
 	case readPublisherStateRecord:
 		atomic.AddInt64(pa.stats.CountPublishers, -1)
 		pa.onSourceSetNotReady()
 	}
 
-	if pa.source == c {
+	if pa.source == rp {
 		pa.source = nil
+		pa.sourceStream.Close()
+		pa.sourceStream = nil
 
 		// close all readPublishers that are reading or waiting to read
-		for oc, state := range pa.readPublishers {
+		for orp, state := range pa.readPublishers {
 			if state != readPublisherStatePreRemove {
-				pa.removeReadPublisher(oc)
-				oc.Close()
+				pa.removeReadPublisher(orp)
+				orp.Close()
 			}
 		}
 	}
@@ -412,7 +424,9 @@ func (pa *Path) onSourceSetReady() {
 	pa.sourceState = sourceStateReady
 
 	for _, req := range pa.describeRequests {
-		req.Res <- readpublisher.DescribeRes{pa.sourceTracks.Write(), "", nil} //nolint:govet
+		req.Res <- readpublisher.DescribeRes{
+			Stream: pa.sourceStream,
+		}
 	}
 	pa.describeRequests = nil
 
@@ -484,13 +498,17 @@ func (pa *Path) onReadPublisherDescribe(req readpublisher.DescribeReq) {
 	pa.scheduleClose()
 
 	if _, ok := pa.source.(*sourceRedirect); ok {
-		req.Res <- readpublisher.DescribeRes{nil, pa.conf.SourceRedirect, nil} //nolint:govet
+		req.Res <- readpublisher.DescribeRes{
+			Redirect: pa.conf.SourceRedirect,
+		}
 		return
 	}
 
 	switch pa.sourceState {
 	case sourceStateReady:
-		req.Res <- readpublisher.DescribeRes{pa.sourceTracks.Write(), "", nil} //nolint:govet
+		req.Res <- readpublisher.DescribeRes{
+			Stream: pa.sourceStream,
+		}
 		return
 
 	case sourceStateWaitingDescribe:
@@ -563,7 +581,7 @@ func (pa *Path) onReadPublisherSetupPlayPost(req readpublisher.SetupPlayReq) {
 
 	req.Res <- readpublisher.SetupPlayRes{
 		Path:       pa,
-		Tracks:     pa.sourceTracks,
+		Stream:     pa.sourceStream,
 		TrackInfos: ti,
 	}
 }
@@ -571,7 +589,10 @@ func (pa *Path) onReadPublisherSetupPlayPost(req readpublisher.SetupPlayReq) {
 func (pa *Path) onReadPublisherPlay(req readpublisher.PlayReq) {
 	atomic.AddInt64(pa.stats.CountReaders, 1)
 	pa.readPublishers[req.Author] = readPublisherStatePlay
-	pa.readers.add(req.Author)
+
+	if _, ok := req.Author.(rtspSession); !ok {
+		pa.nonRTSPReaders.add(req.Author)
+	}
 
 	req.Res <- readpublisher.PlayRes{TrackInfos: pa.sp.TrackInfos()}
 }
@@ -609,7 +630,7 @@ func (pa *Path) onReadPublisherAnnounce(req readpublisher.AnnounceReq) {
 	pa.addReadPublisher(req.Author, readPublisherStatePreRecord)
 
 	pa.source = req.Author
-	pa.sourceTracks = req.Tracks
+	pa.sourceStream = gortsplib.NewServerStream(req.Tracks)
 	req.Res <- readpublisher.AnnounceRes{pa, nil} //nolint:govet
 }
 
@@ -623,7 +644,7 @@ func (pa *Path) onReadPublisherRecord(req readpublisher.RecordReq) {
 	pa.readPublishers[req.Author] = readPublisherStateRecord
 	pa.onSourceSetReady()
 
-	pa.sp = streamproc.New(pa, len(pa.sourceTracks))
+	pa.sp = streamproc.New(pa, len(pa.sourceStream.Tracks()))
 
 	req.Res <- readpublisher.RecordRes{SP: pa.sp, Err: nil}
 }
@@ -638,7 +659,10 @@ func (pa *Path) onReadPublisherPause(req readpublisher.PauseReq) {
 	if state == readPublisherStatePlay {
 		atomic.AddInt64(pa.stats.CountReaders, -1)
 		pa.readPublishers[req.Author] = readPublisherStatePrePlay
-		pa.readers.remove(req.Author)
+
+		if _, ok := req.Author.(rtspSession); !ok {
+			pa.nonRTSPReaders.remove(req.Author)
+		}
 
 	} else if state == readPublisherStateRecord {
 		atomic.AddInt64(pa.stats.CountPublishers, -1)
@@ -794,5 +818,7 @@ func (pa *Path) OnReadPublisherRemove(req readpublisher.RemoveReq) {
 
 // OnSPFrame is called by streamproc.StreamProc.
 func (pa *Path) OnSPFrame(trackID int, streamType gortsplib.StreamType, payload []byte) {
-	pa.readers.forwardFrame(trackID, streamType, payload)
+	pa.sourceStream.WriteFrame(trackID, streamType, payload)
+
+	pa.nonRTSPReaders.forwardFrame(trackID, streamType, payload)
 }
