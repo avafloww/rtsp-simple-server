@@ -94,6 +94,9 @@ hlsSegmentCount: 3
 # the real segment duration is also influenced by the interval of IDR frames
 # (since the server edit the segment duration to include at least one IDR frame).
 hlsSegmentDuration: 1s
+# sets the value of the Access-Control-Allow-Origin header.
+# by default this is set to * to allow any domain to view HLS streams on this server.
+hlsAllowOrigin: *
 
 ###############################################
 # Path options

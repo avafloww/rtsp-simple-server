@@ -88,6 +88,7 @@ type Conf struct {
 	HLSAddress         string        `yaml:"hlsAddress"`
 	HLSSegmentCount    int           `yaml:"hlsSegmentCount"`
 	HLSSegmentDuration time.Duration `yaml:"hlsSegmentDuration"`
+	HLSAllowOrigin     string        `yaml:"hlsAllowOrigin"`
 
 	// path
 	Paths map[string]*PathConf `yaml:"paths"`
